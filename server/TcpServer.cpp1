@@ -1,0 +1,170 @@
+#ifdef _WIN32
+#include <windows.h>
+#include <winsock2.h>
+#define WIN32_LEAN_AND_MEAN
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#endif
+#ifdef __linux__
+typedef	int SOCKET;
+#define INVALID_SOCKET  ((SOCKET)(~0))
+#define SOCKET_ERROR            (-1)
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <string.h>
+#include <unistd.h>
+//#define IPPROTO_TCP 0
+#endif
+  
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int processRecv(SOCKET  s) {
+	char clientBuff[256] = { 0 };
+	int revCount = 0;
+	const char* name = "Im server";
+	const char* version = "ver 0.0.1";
+	const char* age = "two days";
+	revCount = recv(s, clientBuff, sizeof(clientBuff), 0);
+
+	if (revCount <= 0) {
+		std::cout << "recv ERROR" << std::endl;
+		return -1;
+	}
+	printf("recv : %s\n", clientBuff);
+
+	if (strcmp(clientBuff, "name") == 0) {
+		send(s, name, strlen(name) + 1, 0);
+	}
+	else if (strcmp(clientBuff, "version") == 0) {
+		send(s, version, strlen(version), 0);
+	}
+	else if (strcmp(clientBuff, "age") == 0) {
+		send(s, age, strlen(age) + 1, 0);
+	}
+	return 0;
+}
+
+int main() {
+	std::cout << "hello" << std::endl;
+#ifdef _WIN32	
+	WORD ver = MAKEWORD(2,2);
+	WSADATA dat;
+	WSAStartup(ver,&dat);
+#endif	
+	std::vector<SOCKET> clients;
+	SOCKET vSocket = socket(AF_INET,SOCK_STREAM,0);
+	unsigned int selectMax = vSocket;
+
+	if (vSocket == INVALID_SOCKET)
+	{
+		std::cout << "vSocket ERROR" << std::endl;
+		return 0;
+	}
+
+	sockaddr_in  addr;
+	memset(&addr,0,sizeof(sockaddr_in));
+	addr.sin_family = AF_INET;
+#ifdef _WIN32	
+	addr.sin_addr.S_un.S_addr = INADDR_ANY;
+#else
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+#endif		
+	addr.sin_port = htons(6950);
+	int ret;
+	ret = bind(vSocket, (sockaddr*)&addr,sizeof(addr));
+	if (ret == SOCKET_ERROR) {
+		std::cout << "bind ERROR" << std::endl;
+		return 0;
+	}
+
+	ret = listen(vSocket,SOMAXCONN);
+	if (ret == SOCKET_ERROR) {
+		std::cout << "listen ERROR" << std::endl;
+		return 0;
+	}
+
+	sockaddr_in addrClient = {0};
+	unsigned int addrLen = sizeof(addrClient);
+	fd_set readFds;
+	fd_set writeFds;
+	fd_set exceptionFds;
+
+	int selectRet = 0;
+	while (true) {
+		FD_ZERO(&readFds);
+		FD_ZERO(&writeFds);
+		FD_ZERO(&exceptionFds);
+		FD_SET(vSocket, &readFds);
+		FD_SET(vSocket, &writeFds);
+		FD_SET(vSocket, &exceptionFds);
+		for (int i = 0; i < clients.size(); i++) {
+			FD_SET(clients[i], &readFds);
+			if(clients[i] > selectMax){
+					selectMax = clients[i];
+			}
+		}
+		selectRet = select(selectMax+1, &readFds, &writeFds, &exceptionFds, NULL);
+		if (selectRet < 0) {
+			std::cout << "select  ERROR" << std::endl;
+			return 0;
+		}
+
+		if (FD_ISSET(vSocket, &readFds)) {
+			FD_CLR(vSocket, &readFds);
+			SOCKET clientSocket = accept(vSocket, (sockaddr*)&addrClient, &addrLen);
+			if (clientSocket == INVALID_SOCKET) {
+				std::cout << "accept ERROR" << std::endl;
+			}
+			else {
+				std::cout << "accept clent: " << std::endl;
+				printf("client addr: %s\n ", inet_ntoa(addrClient.sin_addr));
+				clients.push_back(clientSocket);
+			}
+		}
+		else {
+#ifdef _WIN32			
+			if (readFds.fd_count > 0) {
+				for (int i = 0; i < readFds.fd_count; i++) {
+					int processRet = processRecv(readFds.fd_array[i]);
+					if (processRet == -1) {
+						std::vector<SOCKET>::iterator iter = std::find(clients.begin(), clients.end(), readFds.fd_array[i]);
+						if (iter != clients.end()) {
+							clients.erase(iter);
+						}
+					}
+				}
+
+			}
+#else
+			if(selectRet > 0){
+			//	std::cout<<"arriv here"<<std::endl;
+				for (auto iter = clients.begin(); iter != clients.end(); ) {
+        			if(FD_ISSET(*iter, &readFds)){
+						int processRet = processRecv(*iter);
+						if(processRet == -1){
+							close(*iter);
+							iter = clients.erase(iter);
+							continue;
+						}
+					}
+					iter++;
+    			}
+
+			}
+
+#endif			
+			
+		}
+
+	}
+#ifdef	_WIN32
+	closesocket(vSocket);
+	WSACleanup();
+#endif	
+#ifdef	_linux_	
+	close(vSocket);
+#endif	
+
+}

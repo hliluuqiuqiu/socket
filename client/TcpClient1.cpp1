@@ -1,0 +1,128 @@
+#ifdef _WIN32
+#include <windows.h>
+#include <winsock2.h>
+#define WIN32_LEAN_AND_MEAN
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#endif
+#ifdef __linux__
+typedef	int SOCKET;
+#define INVALID_SOCKET  ((SOCKET)(~0))
+#define SOCKET_ERROR            (-1)
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <string.h>
+#include <unistd.h>
+//#define IPPROTO_TCP 0
+#endif
+ #include <stdio.h> 
+#include <iostream>
+#include <vector>
+#include <algorithm>
+int main() {
+	std::cout << "hello" << std::endl;
+#ifdef _WIN32	
+	WORD ver = MAKEWORD(2,2);
+	WSADATA dat;
+	WSAStartup(ver,&dat);
+#endif
+	
+	SOCKET vSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	
+	if (vSocket == INVALID_SOCKET)
+	{
+		std::cout << "vSocket ERROR" << std::endl;
+		return 0;
+	}
+
+	sockaddr_in  addr = {};
+	addr.sin_family = AF_INET;
+#ifdef _WIN32	
+	addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
+#else
+	
+	addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+#endif
+
+	addr.sin_port = htons(6950);
+	int ret;
+	ret = connect(vSocket,(sockaddr*)&addr,sizeof(addr));
+	if (ret == SOCKET_ERROR) {
+
+		std::cout << "connect ERROR" << std::endl;
+		return 0;
+
+	}
+	char sendBuf[256] = { 0 };
+	char recvBuf[256] = { 0 };
+	int  revCount = 0;
+	fd_set readFds;
+	fd_set writeFds;
+	fd_set exceptionFds;
+
+	int selectRet = -1;
+	while (true) {
+		FD_ZERO(&readFds);
+		FD_ZERO(&writeFds);
+		FD_ZERO(&exceptionFds);
+
+		FD_SET(vSocket, &readFds);
+		FD_SET(vSocket, &writeFds);
+		FD_SET(vSocket, &exceptionFds);
+		selectRet = select(vSocket + 1, &readFds, &writeFds, &exceptionFds, NULL);
+	//	std::cout << "hello selectRet" << std::endl;
+		if (selectRet < 0) {
+			return 0;
+		}
+		
+		if (FD_ISSET(vSocket, &readFds)) {
+				memset(recvBuf, 0, sizeof(recvBuf));
+				revCount = recv(vSocket, recvBuf, sizeof(recvBuf), 0);
+				if(revCount == SOCKET_ERROR){
+					close(vSocket);
+					printf("vSocket close \n");
+					return 0;
+				}
+				printf("vount : %d,ser : %s\n", revCount, recvBuf);
+				
+
+
+			}
+		else if (FD_ISSET(vSocket, &writeFds)) {
+				memset(sendBuf, 0, sizeof(sendBuf));
+				scanf("%s",sendBuf);
+				//printf("send:%s\n",sendBuf);
+				if (strcmp(sendBuf, "exit") == 0) {
+					break;
+				}
+				else {
+					//printf("send:%s\n",sendBuf);
+					send(vSocket, sendBuf, strlen(sendBuf), 0);
+				}
+			
+			}
+		
+	}
+	
+
+	
+
+
+	{
+		while (true)
+		{	
+			
+
+		}
+		
+	}
+
+
+#ifdef	_WIN32
+	closesocket(vSocket);
+	WSACleanup();
+#endif	
+#ifdef	_linux_	
+	close(vSocket);
+#endif
+}
