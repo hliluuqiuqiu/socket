@@ -64,7 +64,7 @@ void TcpSever::accept1(){
 		}
 		TcpRecvHandler* handler = new TcpRecvHandler(10240);
 
-		if(client == nullptr){
+		if(handler == nullptr){
 			std::cout << "non mem on accept" << std::endl;
 			delete client;
 			client = nullptr;
